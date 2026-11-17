@@ -97,13 +97,13 @@
     // 401 to requests from the TV itself, so apps are opened by the module's
     // background service (service/service.js), which TizenBrew runs with
     // tizen access. The small status line bottom-left shows what happened.
-    var BUILD = 5;
+    var BUILD = 6;
     var SERVICE = 'http://127.0.0.1:8086';
     var report = {};
 
     function note(route, text) {
         report[route] = text;
-        var parts = ['build ' + BUILD];
+        var parts = ['build ' + BUILD + ' (' + (window.HOME_VERSION || '?') + ')'];
         for (var k in report) {
             if (report.hasOwnProperty(k)) { parts.push(k + ': ' + report[k]); }
         }
@@ -264,5 +264,11 @@
         }
     }
 
-    window.onload = init;
+    // The bootstrap in index.html adds this script dynamically, so the page's
+    // load event may already have fired.
+    if (document.readyState === 'complete') {
+        init();
+    } else {
+        window.addEventListener('load', init);
+    }
 })();
