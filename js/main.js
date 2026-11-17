@@ -95,10 +95,20 @@
 
     // Plain POST with no custom headers is a "simple" CORS request: the TV
     // runs the app even though this page isn't allowed to read the reply.
+    // On Tizen 7 the tizen object does exist inside TizenBrew, but
+    // tizen.application.launch() rejects the store's numeric app IDs, so the
+    // REST API is always tried first and the tizen call is only a silent
+    // backup if the request itself fails.
     function launchViaRest(appId, appName) {
         showToast('Opening ' + appName + '...');
         var xhr = new XMLHttpRequest();
         xhr.open('POST', TV_API + encodeURIComponent(appId), true);
+        xhr.onerror = function () {
+            if (!hasTizen) { return; }
+            try {
+                tizen.application.launch(appId, null, function () {});
+            } catch (e) { /* nothing else to try */ }
+        };
         xhr.send();
     }
 
@@ -133,12 +143,12 @@
             openUrl(tile.getAttribute('data-url'), appName);
             return;
         }
+        if (onTv) {
+            launchViaRest(appId, appName);
+            return;
+        }
         if (!hasTizen) {
-            if (onTv) {
-                launchViaRest(appId, appName);
-            } else {
-                showToast('(browser preview) would launch ' + appId);
-            }
+            showToast('(browser preview) would launch ' + appId);
             return;
         }
         try {
