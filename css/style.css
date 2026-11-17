@@ -1,38 +1,46 @@
-/* Plain CSS for old Tizen WebKit (2015-2017 TVs): no variables, no grid, no gap. */
+/* Dark theme, neon pink + neon green accents.
+   Kept cheap for the TV's chip: no blur, no filters, only transform animates. */
 html, body {
     margin: 0;
     padding: 0;
     width: 1920px;
     height: 1080px;
     overflow: hidden;
-    background: #0e1116;
-    color: #e8eaed;
-    font-family: "SamsungOne", "Tizen Sans", Arial, sans-serif;
+    background: #06070b;
+    color: #f2f3f7;
+    font-family: "SamsungOne", "Tizen Sans", "Helvetica Neue", Arial, sans-serif;
 }
 
 #header {
     position: absolute;
-    top: 60px;
+    top: 80px;
     left: 120px;
     right: 120px;
-    height: 120px;
+    height: 200px;
 }
 
 #clock {
-    font-size: 96px;
-    font-weight: 300;
+    font-size: 150px;
+    font-weight: 200;
     line-height: 1;
+    letter-spacing: -2px;
+}
+
+#clock .sep {
+    color: #39ff14;
+    padding: 0 6px;
 }
 
 #date {
-    margin-top: 10px;
-    font-size: 32px;
-    color: #9aa0a6;
+    margin-top: 14px;
+    font-size: 36px;
+    color: #39ff14;
+    letter-spacing: 1px;
 }
 
 #rows {
     position: absolute;
-    top: 260px;
+    top: 400px;
     left: 120px;
     right: 120px;
 }
@@ -44,35 +52,74 @@ html, body {
 
 .row-title {
     font-size: 30px;
-    color: #9aa0a6;
+    color: #8a8f9c;
     margin: 0 0 18px 6px;
+}
+
+.row-title:empty {
+    display: none;
 }
 
 .tile {
     display: inline-block;
     vertical-align: top;
-    width: 300px;
-    height: 170px;
+    box-sizing: border-box;
+    width: 312px;
+    height: 400px;
     margin-right: 30px;
-    border-radius: 14px;
+    border-radius: 22px;
     position: relative;
-    -webkit-transition: -webkit-transform 0.15s ease-out;
-    transition: transform 0.15s ease-out;
+    overflow: hidden;
+    background: #12141b;
+    border: 3px solid #1f222c;
+    -webkit-transition: -webkit-transform 0.14s ease-out;
+    transition: transform 0.14s ease-out;
+}
+
+.tile:last-child {
+    margin-right: 0;
+}
+
+/* Brand colour bar across the top of each tile. */
+.tile-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 10px;
+}
+
+/* Big brand-coloured initial. */
+.tile-initial {
+    position: absolute;
+    top: 50px;
+    left: 30px;
+    font-size: 190px;
+    font-weight: bold;
+    line-height: 1;
 }
 
 .tile-name {
     position: absolute;
-    left: 24px;
-    bottom: 20px;
-    font-size: 34px;
+    left: 30px;
+    right: 20px;
+    bottom: 30px;
+    font-size: 40px;
     font-weight: bold;
     color: #fff;
 }
 
 .tile.focused {
-    -webkit-transform: scale(1.08);
-    transform: scale(1.08);
-    box-shadow: 0 0 0 6px #fff, 0 12px 30px rgba(0, 0, 0, 0.6);
+    -webkit-transform: scale(1.07);
+    transform: scale(1.07);
+    z-index: 2;
+    border-color: #ff2d95;
+    background: #191c26;
+    box-shadow: 0 0 0 3px #ff2d95, 0 0 44px rgba(255, 45, 149, 0.55);
+}
+
+.tile.focused .tile-name {
+    color: #39ff14;
 }
 
 #toast {
@@ -82,8 +129,9 @@ html, body {
     width: 900px;
     margin-left: -450px;
     padding: 20px 0;
-    border-radius: 12px;
-    background: #2b2f36;
+    border-radius: 14px;
+    background: #14161d;
+    border: 2px solid #ff2d95;
     font-size: 28px;
     text-align: center;
     opacity: 0;

@@ -22,7 +22,8 @@
 
     function updateClock() {
         var d = new Date();
-        document.getElementById('clock').innerHTML = pad(d.getHours()) + ':' + pad(d.getMinutes());
+        document.getElementById('clock').innerHTML =
+            pad(d.getHours()) + '<span class="sep">:</span>' + pad(d.getMinutes());
         document.getElementById('date').innerHTML =
             DAYS[d.getDay()] + ', ' + MONTHS[d.getMonth()] + ' ' + d.getDate();
     }
@@ -52,7 +53,16 @@
                 var t = rowData.tiles[c];
                 var tile = document.createElement('div');
                 tile.className = 'tile';
-                tile.style.backgroundColor = t.color || '#3a3f4b';
+                var brand = t.color || '#8a8f9c';
+                var bar = document.createElement('div');
+                bar.className = 'tile-bar';
+                bar.style.backgroundColor = brand;
+                tile.appendChild(bar);
+                var initial = document.createElement('div');
+                initial.className = 'tile-initial';
+                initial.style.color = brand;
+                initial.innerHTML = t.name.charAt(0);
+                tile.appendChild(initial);
                 if (t.url !== undefined) {
                     tile.setAttribute('data-url', t.url);
                 } else {
@@ -143,8 +153,16 @@
     // Called when the remote's Back key is pressed on the launcher.
     // Available helpers: focus(row, col), showToast(text), pos.row / pos.col,
     // e.preventDefault() (stops TizenBrew/the TV handling Back itself).
+    // First press is swallowed with a hint; a second press within 2.5s is left
+    // alone so it falls through to TizenBrew. That keeps a way out of the
+    // launcher while stopping accidental exits.
+    var backArmedUntil = 0;
     function onBack(e) {
-        // TODO(human): decide what Back does on the homescreen.
+        var now = new Date().getTime();
+        if (now < backArmedUntil) { return; }
+        backArmedUntil = now + 2500;
+        e.preventDefault();
+        showToast('Press Back again to leave Home');
     }
 
     function onKey(e) {
