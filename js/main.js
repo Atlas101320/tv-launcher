@@ -93,23 +93,101 @@
         grid[row][col].className = 'tile focused';
     }
 
-    // Plain POST with no custom headers is a "simple" CORS request: the TV
-    // runs the app even though this page isn't allowed to read the reply.
-    // On Tizen 7 the tizen object does exist inside TizenBrew, but
-    // tizen.application.launch() rejects the store's numeric app IDs, so the
-    // REST API is always tried first and the tizen call is only a silent
-    // backup if the request itself fails.
-    function launchViaRest(appId, appName) {
-        showToast('Opening ' + appName + '...');
+    // ---- Launching apps -------------------------------------------------
+    // Inside TizenBrew there are three possible routes to open an app, and
+    // which ones work depends on the TV's Tizen version. All are fired at
+    // once (opening an app twice is harmless) and each reports its result
+    // in the small status line at the bottom-left of the screen.
+    var BUILD = 3;
+    var report = {};
+
+    function note(route, text) {
+        report[route] = text;
+        var parts = ['build ' + BUILD, 'host ' + location.host, 'tizen ' + (hasTizen ? 'yes' : 'no')];
+        for (var k in report) {
+            if (report.hasOwnProperty(k)) { parts.push(k + ': ' + report[k]); }
+        }
+        document.getElementById('status').innerHTML = parts.join('  |  ');
+    }
+
+    // Plain POST with no custom headers is a "simple" CORS request, so the
+    // TV runs the app even if this page isn't allowed to read the reply.
+    function restPost(base, appId, route) {
         var xhr = new XMLHttpRequest();
-        xhr.open('POST', TV_API + encodeURIComponent(appId), true);
-        xhr.onerror = function () {
-            if (!hasTizen) { return; }
+        try {
+            xhr.open('POST', base + encodeURIComponent(appId), true);
+            xhr.timeout = 5000;
+            xhr.onload = function () { note(route, 'HTTP ' + xhr.status); };
+            xhr.onerror = function () { note(route, 'request failed'); };
+            xhr.ontimeout = function () { note(route, 'timeout'); };
+            xhr.send();
+            note(route, 'sent');
+        } catch (e) {
+            note(route, 'blocked ' + e.message);
+        }
+    }
+
+    function launchViaRest(appId) {
+        // Route 1: the TV's REST API on loopback.
+        restPost('http://127.0.0.1:8001/api/v2/applications/', appId, 'local');
+        // Route 2: the same API on the TV's network address. TizenBrew's
+        // service answers any non-module URL with that address.
+        var q = new XMLHttpRequest();
+        try {
+            q.open('GET', location.protocol + '//' + location.host + '/tv-ip', true);
+            q.timeout = 4000;
+            q.onload = function () {
+                var ip = (q.responseText || '').replace(/\s/g, '');
+                if (/^\d+\.\d+\.\d+\.\d+$/.test(ip)) {
+                    restPost('http://' + ip + ':8001/api/v2/applications/', appId, 'lan');
+                } else {
+                    note('lan', 'no address');
+                }
+            };
+            q.onerror = function () { note('lan', 'lookup failed'); };
+            q.ontimeout = function () { note('lan', 'lookup timeout'); };
+            q.send();
+        } catch (e) {
+            note('lan', 'blocked ' + e.message);
+        }
+    }
+
+    // Route 3: the tizen API. It wants the app's full ID, which for store
+    // apps is not always the numeric ID, so look it up in the installed list.
+    function launchViaTizen(appId, appName) {
+        if (!hasTizen || !tizen.application) {
+            note('tizen-launch', 'n/a');
+            return;
+        }
+        function go(realId) {
             try {
-                tizen.application.launch(appId, null, function () {});
-            } catch (e) { /* nothing else to try */ }
-        };
-        xhr.send();
+                tizen.application.launch(realId, function () {
+                    note('tizen-launch', 'ok ' + realId);
+                }, function (err) {
+                    note('tizen-launch', realId + ' ' + (err && err.name));
+                });
+            } catch (e) {
+                note('tizen-launch', 'threw ' + e.message);
+            }
+        }
+        try {
+            tizen.application.getAppsInfo(function (apps) {
+                var match = null;
+                var wanted = appName.toLowerCase();
+                for (var i = 0; i < apps.length && !match; i++) {
+                    var a = apps[i];
+                    if (a.id === appId || a.packageId === appId || a.id.indexOf(appId + '.') === 0) {
+                        match = a.id;
+                    }
+                }
+                for (var j = 0; j < apps.length && !match; j++) {
+                    if ((apps[j].name || '').toLowerCase() === wanted) { match = apps[j].id; }
+                }
+                go(match || appId);
+            }, function () { go(appId); });
+        } catch (e) {
+            go(appId);
+        }
     }
 
     function openUrl(url, appName) {
@@ -143,21 +221,14 @@
             openUrl(tile.getAttribute('data-url'), appName);
             return;
         }
-        if (onTv) {
-            launchViaRest(appId, appName);
-            return;
-        }
-        if (!hasTizen) {
+        if (!onTv && !hasTizen) {
             showToast('(browser preview) would launch ' + appId);
             return;
         }
-        try {
-            tizen.application.launch(appId, null, function (err) {
-                showToast(appName + ' is not installed (' + err.name + ')');
-            });
-        } catch (e) {
-            showToast('Could not launch ' + appName + ': ' + e.message);
-        }
+        showToast('Opening ' + appName + '...');
+        report = {};
+        launchViaRest(appId);
+        launchViaTizen(appId, appName);
     }
 
     // Called when the remote's Back key is pressed on the launcher.
@@ -176,6 +247,7 @@
     }
 
     function onKey(e) {
+        note('key', e.keyCode);
         switch (e.keyCode) {
             case KEY.LEFT:  focus(pos.row, pos.col - 1); break;
             case KEY.RIGHT: focus(pos.row, pos.col + 1); break;
@@ -195,6 +267,7 @@
 
     function init() {
         build();
+        note('ready', 'yes');
         focus(0, 0);
         updateClock();
         setInterval(updateClock, 10000);

@@ -142,3 +142,15 @@ html, body {
 #toast.show {
     opacity: 1;
 }
+
+/* Small diagnostics line: build number and what each launch route did. */
+#status {
+    position: absolute;
+    left: 120px;
+    right: 120px;
+    bottom: 18px;
+    font-size: 22px;
+    color: #6b7080;
+    white-space: nowrap;
+    overflow: hidden;
+}
