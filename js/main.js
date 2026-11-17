@@ -11,7 +11,6 @@
     // TizenBrew serves modules from 127.0.0.1:8081 without the tizen object;
     // there we launch apps through the TV's own REST API instead.
     var onTv = location.hostname === '127.0.0.1';
-    var TV_API = 'http://127.0.0.1:8001/api/v2/applications/';
     var grid = [];        // grid[row][col] -> tile element
     var pos = { row: 0, col: 0 };
     var toastTimer = null;
@@ -94,100 +93,61 @@
     }
 
     // ---- Launching apps -------------------------------------------------
-    // Inside TizenBrew there are three possible routes to open an app, and
-    // which ones work depends on the TV's Tizen version. All are fired at
-    // once (opening an app twice is harmless) and each reports its result
-    // in the small status line at the bottom-left of the screen.
-    var BUILD = 4;
+    // On this TV the page has no tizen object and the TV's REST API answers
+    // 401 to requests from the TV itself, so apps are opened by the module's
+    // background service (service/service.js), which TizenBrew runs with
+    // tizen access. The small status line bottom-left shows what happened.
+    var BUILD = 5;
+    var SERVICE = 'http://127.0.0.1:8086';
     var report = {};
 
     function note(route, text) {
         report[route] = text;
-        var parts = ['build ' + BUILD, 'host ' + location.host, 'tizen ' + (hasTizen ? 'yes' : 'no')];
+        var parts = ['build ' + BUILD];
         for (var k in report) {
             if (report.hasOwnProperty(k)) { parts.push(k + ': ' + report[k]); }
         }
         document.getElementById('status').innerHTML = parts.join('  |  ');
     }
 
-    // Plain POST with no custom headers is a "simple" CORS request, so the
-    // TV runs the app even if this page isn't allowed to read the reply.
-    function restPost(base, appId, route) {
+    // TizenBrew starts the service when the module opens, so the first
+    // requests can arrive before it is listening: retry a few times.
+    function launchViaService(appId, appName, attempt) {
         var xhr = new XMLHttpRequest();
-        try {
-            xhr.open('POST', base + encodeURIComponent(appId), true);
-            xhr.timeout = 5000;
-            xhr.onload = function () { note(route, 'HTTP ' + xhr.status); };
-            xhr.onerror = function () { note(route, 'request failed'); };
-            xhr.ontimeout = function () { note(route, 'timeout'); };
-            xhr.send();
-            note(route, 'sent');
-        } catch (e) {
-            note(route, 'blocked ' + e.message);
-        }
-    }
-
-    function launchViaRest(appId) {
-        // Route 1: the TV's REST API on loopback.
-        restPost('http://127.0.0.1:8001/api/v2/applications/', appId, 'local');
-        // Route 2: the same API on the TV's network address. TizenBrew's
-        // service answers any non-module URL with that address.
-        var q = new XMLHttpRequest();
-        try {
-            q.open('GET', location.protocol + '//' + location.host + '/tv-ip', true);
-            q.timeout = 4000;
-            q.onload = function () {
-                var ip = (q.responseText || '').replace(/\s/g, '');
-                if (/^\d+\.\d+\.\d+\.\d+$/.test(ip)) {
-                    restPost('http://' + ip + ':8001/api/v2/applications/', appId, 'lan');
-                } else {
-                    note('lan', 'no address');
-                }
-            };
-            q.onerror = function () { note('lan', 'lookup failed'); };
-            q.ontimeout = function () { note('lan', 'lookup timeout'); };
-            q.send();
-        } catch (e) {
-            note('lan', 'blocked ' + e.message);
-        }
-    }
-
-    // Route 3: the tizen API. It wants the app's full ID, which for store
-    // apps is not always the numeric ID, so look it up in the installed list.
-    function launchViaTizen(appId, appName) {
-        if (!hasTizen || !tizen.application) {
-            note('tizen-launch', 'n/a');
-            return;
-        }
-        function go(realId) {
-            try {
-                tizen.application.launch(realId, function () {
-                    note('tizen-launch', 'ok ' + realId);
-                }, function (err) {
-                    note('tizen-launch', realId + ' ' + (err && err.name));
-                });
-            } catch (e) {
-                note('tizen-launch', 'threw ' + e.message);
+        function retry(why) {
+            if (attempt < 6) {
+                note('service', why + ', retry ' + (attempt + 1));
+                setTimeout(function () { launchViaService(appId, appName, attempt + 1); }, 1500);
+            } else {
+                note('service', why + ' - restart the TV to start it');
+                showToast('Could not open ' + appName + ' (launch service not running)');
             }
         }
-        try {
-            tizen.application.getAppsInfo(function (apps) {
-                var match = null;
-                var wanted = appName.toLowerCase();
-                for (var i = 0; i < apps.length && !match; i++) {
-                    var a = apps[i];
-                    if (a.id === appId || a.packageId === appId || a.id.indexOf(appId + '.') === 0) {
-                        match = a.id;
-                    }
-                }
-                for (var j = 0; j < apps.length && !match; j++) {
-                    if ((apps[j].name || '').toLowerCase() === wanted) { match = apps[j].id; }
-                }
-                go(match || appId);
-            }, function () { go(appId); });
-        } catch (e) {
-            go(appId);
-        }
+        xhr.open('GET', SERVICE + '/launch?id=' + encodeURIComponent(appId) +
+            '&name=' + encodeURIComponent(appName), true);
+        xhr.timeout = 20000;
+        xhr.onload = function () {
+            var r = null;
+            try { r = JSON.parse(xhr.responseText); } catch (e) { /* handled below */ }
+            if (r && r.ok) {
+                note('service', 'opened ' + r.id);
+            } else {
+                note('service', (r && r.error) || ('HTTP ' + xhr.status));
+                showToast('Could not open ' + appName);
+            }
+        };
+        xhr.onerror = function () { retry('not reachable'); };
+        xhr.ontimeout = function () { retry('timeout'); };
+        xhr.send();
+    }
+
+    function checkService() {
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', SERVICE + '/status', true);
+        xhr.timeout = 4000;
+        xhr.onload = function () { note('service', 'ready'); };
+        xhr.onerror = function () { note('service', 'starting'); };
+        xhr.send();
     }
 
     function openUrl(url, appName) {
@@ -221,14 +181,14 @@
             openUrl(tile.getAttribute('data-url'), appName);
             return;
         }
-        if (!onTv && !hasTizen) {
+        if (!onTv) {
             showToast('(browser preview) would launch ' + appId);
             return;
         }
         showToast('Opening ' + appName + '...');
         report = {};
-        launchViaRest(appId);
-        launchViaTizen(appId, appName);
+        note('service', 'asked for ' + appName);
+        launchViaService(appId, appName, 0);
     }
 
     // Called when the remote's Back key is pressed on the launcher.
@@ -265,7 +225,6 @@
     }
 
     function onKey(e) {
-        note('key', e.keyCode);
         switch (e.keyCode) {
             case KEY.LEFT:  focus(pos.row, pos.col - 1); break;
             case KEY.RIGHT: focus(pos.row, pos.col + 1); break;
@@ -286,7 +245,8 @@
 
     function init() {
         build();
-        note('ready', 'yes');
+        note('service', 'checking');
+        if (onTv) { setTimeout(checkService, 2500); }
         focus(0, 0);
         updateClock();
         setInterval(updateClock, 10000);
