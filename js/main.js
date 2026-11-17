@@ -98,7 +98,7 @@
     // which ones work depends on the TV's Tizen version. All are fired at
     // once (opening an app twice is harmless) and each reports its result
     // in the small status line at the bottom-left of the screen.
-    var BUILD = 3;
+    var BUILD = 4;
     var report = {};
 
     function note(route, text) {
@@ -234,16 +234,34 @@
     // Called when the remote's Back key is pressed on the launcher.
     // Available helpers: focus(row, col), showToast(text), pos.row / pos.col,
     // e.preventDefault() (stops TizenBrew/the TV handling Back itself).
-    // First press is swallowed with a hint; a second press within 2.5s is left
-    // alone so it falls through to TizenBrew. That keeps a way out of the
-    // launcher while stopping accidental exits.
+    // First press only shows a hint; a second press within 3s leaves the
+    // launcher. That keeps a way out while stopping accidental exits.
     var backArmedUntil = 0;
     function onBack(e) {
-        var now = new Date().getTime();
-        if (now < backArmedUntil) { return; }
-        backArmedUntil = now + 2500;
         e.preventDefault();
-        showToast('Press Back again to leave Home');
+        var now = new Date().getTime();
+        if (now >= backArmedUntil) {
+            backArmedUntil = now + 3000;
+            showToast('Press Back again to leave Home');
+            return;
+        }
+        leave();
+    }
+
+    // TizenBrew opens this page by navigating its own window here, so going
+    // back one step in history returns to the TizenBrew module list. If there
+    // is no history to go back to, close the app instead.
+    function leave() {
+        showToast('Leaving Home...');
+        if (window.history.length > 1) {
+            window.history.back();
+            return;
+        }
+        try {
+            tizen.application.getCurrentApplication().exit();
+        } catch (err) {
+            showToast('Hold Back for 2 seconds, or press the Home button');
+        }
     }
 
     function onKey(e) {
@@ -256,6 +274,7 @@
             case KEY.DOWN:  focus(pos.row + 1, pos.col); break;
             case KEY.ENTER: launch(grid[pos.row][pos.col]); break;
             case KEY.BACK:
+            case 461:
             case KEY.BACKSPACE:
                 onBack(e);
                 return;
